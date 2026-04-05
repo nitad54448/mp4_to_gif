@@ -9,6 +9,7 @@
         img { margin-top: 20px; border: 1px solid #ccc; max-width: 100%; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 </head>
 <body>
     <h2>MP4 to GIF Converter</h2>
@@ -55,11 +56,17 @@
             resultImg.style.display = 'none';
 
             try {
-                // Load WebAssembly core
+                const { toBlobURL } = FFmpegUtil;
+
+                // Load WebAssembly core using Blob URLs to bypass CORS
                 if (!ffmpeg.loaded) {
+                    const coreURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+                    const ffmpegURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd';
+                    
                     await ffmpeg.load({
-                        coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-                        wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+                        coreURL: await toBlobURL(`${coreURL}/ffmpeg-core.js`, 'text/javascript'),
+                        wasmURL: await toBlobURL(`${coreURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        classWorkerURL: await toBlobURL(`${ffmpegURL}/814.ffmpeg.js`, 'text/javascript')
                     });
                 }
 
