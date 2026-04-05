@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MP4 to GIF Converter</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .controls { margin-bottom: 15px; }
+        img { margin-top: 20px; border: 1px solid #ccc; max-width: 100%; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
+</head>
+<body>
+    <h2>MP4 to GIF Converter</h2>
+    
+    <div class="controls">
+        <input type="file" id="videoFile" accept="video/mp4" />
+    </div>
+    
+    <div class="controls">
+        <label>FPS: <input type="number" id="fps" value="10" min="1" max="60" /></label>
+        <label style="margin-left: 10px;">Width (px): <input type="number" id="scale" value="320" step="10" /></label>
+    </div>
+    
+    <button id="convertBtn">Convert to GIF</button>
+    
+    <p id="status"></p>
+    <img id="result" style="display:none;" alt="Generated GIF" />
+
+    <script>
+        const { FFmpeg } = FFmpegWASM;
+        const ffmpeg = new FFmpeg();
+
+        const convertBtn = document.getElementById('convertBtn');
+        const statusText = document.getElementById('status');
+        const resultImg = document.getElementById('result');
+
+        // FFmpeg handles background threading automatically
+        ffmpeg.on('progress', ({ progress }) => {
+            statusText.textContent = `Processing: ${Math.round(progress * 100)}%`;
+        });
+
+        convertBtn.addEventListener('click', async () => {
+            const file = document.getElementById('videoFile').files[0];
+            const fps = document.getElementById('fps').value;
+            const scale = document.getElementById('scale').value;
+
+            if (!file) {
+                statusText.textContent = 'Please select an MP4 file first.';
+                return;
+            }
+
+            convertBtn.disabled = true;
+            statusText.textContent = 'Loading FFmpeg engine...';
+            resultImg.style.display = 'none';
+
+            try {
+                // Load WebAssembly core
+                if (!ffmpeg.loaded) {
+                    await ffmpeg.load({
+                        coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+                        wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+                    });
+                }
+
+                const inputName = 'input.mp4';
+                const outputName = 'output.gif';
+
+                // Write file to memory
+                const fileData = new Uint8Array(await file.arrayBuffer());
+                await ffmpeg.writeFile(inputName, fileData);
+
+                // Execute conversion
+                const vfString = `fps=${fps},scale=${scale}:-1:flags=lanczos`;
+                await ffmpeg.exec(['-i', inputName, '-vf', vfString, outputName]);
+
+                // Read and display result
+                const data = await ffmpeg.readFile(outputName);
+                const blob = new Blob([data.buffer], { type: 'image/gif' });
+
+                statusText.textContent = 'Complete!';
+                resultImg.src = URL.createObjectURL(blob);
+                resultImg.style.display = 'block';
+            } catch (error) {
+                statusText.textContent = `Error: ${error.message}`;
+            } finally {
+                convertBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
