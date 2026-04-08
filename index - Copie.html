@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pro MP4 to GIF Converter</title>
+    <style>
+      
+      /* Hide scrollbar for Chrome, Safari and Opera */
+.panel::-webkit-scrollbar {
+    display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.panel {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+
+      /* couleurs moches pour l'instant, à revoir */
+        :root { --bg: #13151f; --surface: #1e2130; --primary: #5c7cfa; --text: #cdd6f4; --success: #20c997; }
+        
+        /* Add this to your existing CSS */
+        progress { width: 100%; height: 8px; border-radius: 4px; overflow: hidden; appearance: none; margin-bottom: 10px; }
+        progress::-webkit-progress-bar { background-color: #2a2e42; }
+        progress::-webkit-progress-value { background-color: var(--primary); transition: width 0.2s; }
+        
+        .download-group { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+        .download-group input { flex: 1; margin: 0; }
+        #downloadBtn { flex: 1; text-align: center; text-decoration: none; padding: 12px; background: var(--success); color: #11111b; border-radius: 8px; font-weight: bold; transition: 0.2s; }
+      
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; height: 100vh; box-sizing: border-box; gap: 20px; }
+        
+        /* Two Panel Layout */
+        .panel { flex: 1; background: var(--surface); border-radius: 12px; padding: 25px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); overflow-y: auto; }
+        
+        h2, h3 { margin: 0; color: var(--primary); }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+        
+        label { font-size: 0.9em; font-weight: 600; color: #bac2de; }
+        input { padding: 10px; border-radius: 6px; border: 1px solid #45475a; background: #181825; color: white; outline: none; transition: 0.2s; }
+        input:focus { border-color: var(--primary); }
+        input[type="file"] { padding: 8px; cursor: pointer; }
+        
+        button { padding: 12px; border-radius: 8px; background: var(--primary); color: #11111b; font-weight: bold; font-size: 1em; cursor: pointer; border: none; transition: 0.2s; margin-top: 10px; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        button:disabled { background: #45475a; color: #a6adc8; cursor: not-allowed; transform: none; }
+        
+        .media-container { width: 100%; aspect-ratio: 16/9; background: #11111b; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #45475a; }
+        video, img { width: 100%; height: 100%; object-fit: contain; }
+        
+        .info-box { background: #181825; padding: 12px; border-radius: 6px; font-size: 0.85em; color: #a6adc8; border-left: 3px solid var(--primary); }
+        
+
+        #downloadBtn:hover { opacity: 0.9; }
+        #status { margin: 0; font-size: 0.9em; text-align: center; }
+    </style>
+
+    <script src="./lib/ffmpeg.js"></script>
+    <script src="./lib/index.js"></script>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>Media Input</h2>
+        
+        <div class="control-group">
+            <input type="file" id="videoFile" accept="video/mp4, video/quicktime" />
+        </div>
+
+        <div class="media-container">
+            <video id="previewVideo" controls style="display:none;"></video>
+            <span id="noVideoText" style="color: #6c7086;">No video loaded</span>
+        </div>
+
+        <div class="info-box" id="videoInfo">
+            Load a video to see metadata.
+        </div>
+
+        <h3>Settings</h3>
+        
+        <div class="row">
+            <div class="control-group">
+                <label>FPS</label>
+                <input type="number" id="fps" value="10" min="1" max="60" />
+            </div>
+            <div class="control-group">
+                <label>Width (px)</label>
+                <input type="number" id="scale" value="320" step="10" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="control-group">
+                <label>Start Time (sec)</label>
+                <input type="number" id="startTime" placeholder="0" min="0" step="0.1" />
+            </div>
+            <div class="control-group">
+                <label>End Time (sec)</label>
+                <input type="number" id="endTime" placeholder="e.g. 5" min="0" step="0.1" />
+            </div>
+        </div>
+
+        <button id="convertBtn" style="display: none;">Generate GIF</button>
+
+
+    </div>
+    
+
+    <div class="panel">
+        <h2>Output</h2>
+        
+        <div class="media-container">
+            <img id="result" style="display:none;" alt="Generated GIF" />
+            <span id="noResultText" style="color: #6c7086;">Result will appear here</span>
+        </div>
+
+        <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
+        <p id="status">Waiting to start...</p>
+        
+        <div class="download-group" id="downloadGroup" style="display:none;">
+            <input type="text" id="filename" value="output.gif" placeholder="Enter filename" />
+            <a id="downloadBtn" download="output.gif"> Export GIF</a>
+        </div>
+    </div>
+
+
+    <script>
+
+
+const progressBar = document.getElementById('progressBar');
+        const downloadGroup = document.getElementById('downloadGroup');
+        const filenameInput = document.getElementById('filename');
+
+
+        const { FFmpeg } = FFmpegWASM;
+        const { toBlobURL } = FFmpegUtil;
+
+        const ffmpeg = new FFmpeg();
+        let loaded = false;
+
+        // UI Elements
+        const fileInput = document.getElementById('videoFile');
+        const previewVideo = document.getElementById('previewVideo');
+        const noVideoText = document.getElementById('noVideoText');
+        const videoInfo = document.getElementById('videoInfo');
+        
+        const convertBtn = document.getElementById('convertBtn');
+        const statusText = document.getElementById('status');
+        const resultImg = document.getElementById('result');
+        const noResultText = document.getElementById('noResultText');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // progress bar
+
+        ffmpeg.on('progress', ({ progress }) => {
+            const percent = Math.round(progress * 100);
+            const clamped = percent > 100 ? 100 : percent;
+            statusText.textContent = `Processing: ${clamped}%`;
+            progressBar.value = clamped;
+        });
+
+        // Load Video Preview & Metadata
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            
+            if (!file) {
+                previewVideo.style.display = 'none';
+                noVideoText.style.display = 'block';
+                videoInfo.innerHTML = 'Load a video to see metadata.';
+                convertBtn.style.display = 'none';
+                return;
+            }
+
+            const url = URL.createObjectURL(file);
+            previewVideo.src = url;
+            previewVideo.style.display = 'block';
+            noVideoText.style.display = 'none';
+
+            convertBtn.style.display = 'block';
+
+            previewVideo.onloadedmetadata = () => {
+                const w = previewVideo.videoWidth;
+                const h = previewVideo.videoHeight;
+                const duration = previewVideo.duration.toFixed(2);
+                const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                
+                videoInfo.innerHTML = `
+                    <strong>Resolution:</strong> ${w} x ${h}<br>
+                    <strong>Duration:</strong> ${duration}s<br>
+                    <strong>File Size:</strong> ${sizeMB} MB
+                `;
+            };
+        });
+
+        // Conversion 
+        
+
+        convertBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a video file first.');
+                return;
+            }
+
+            const fps = document.getElementById('fps').value;
+            const scale = document.getElementById('scale').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+
+            convertBtn.disabled = true;
+            downloadGroup.style.display = 'none';
+            resultImg.style.display = 'none';
+            noResultText.style.display = 'block';
+            progressBar.style.display = 'block';
+            progressBar.value = 0;
+
+            try {
+                if (!loaded) {
+                    statusText.textContent = 'Booting up FFmpeg engine...';
+                    await ffmpeg.load({
+                        coreURL: await toBlobURL('./lib/ffmpeg-core.js', 'text/javascript'),
+                        wasmURL: await toBlobURL('./lib/ffmpeg-core.wasm', 'application/wasm')
+                    });
+                    loaded = true;
+                }
+
+                statusText.textContent = 'Writing file to memory...';
+                await ffmpeg.writeFile('input.mp4', new Uint8Array(await file.arrayBuffer()));
+
+                // Build Command Arguments
+                let args = [];
+                
+                // Add slicing parameters if provided
+                if (startTime) args.push('-ss', startTime);
+                if (endTime) args.push('-to', endTime);
+                
+                // Add input and filters
+                const vf = `fps=${fps},scale=${scale}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`;
+                args.push('-i', 'input.mp4', '-vf', vf, 'output.gif');
+
+                statusText.textContent = 'Converting...';
+                await ffmpeg.exec(args);
+
+                statusText.textContent = 'Finalizing GIF...';
+                const data = await ffmpeg.readFile('output.gif');
+
+                const blob = new Blob([data.buffer], { type: 'image/gif' });
+                const gifUrl = URL.createObjectURL(blob);
+                
+                resultImg.src = gifUrl;
+                resultImg.style.display = 'block';
+                noResultText.style.display = 'none';
+                
+                let name = filenameInput.value.trim();
+                if (!name.toLowerCase().endsWith('.gif')) name += '.gif';
+                
+                downloadBtn.href = gifUrl;
+                downloadBtn.download = name;
+
+                downloadBtn.style.display = 'block';
+
+                downloadGroup.style.display = 'flex';
+                progressBar.style.display = 'none';
+
+                statusText.textContent = 'Done!';
+            } catch (e) {
+                console.error(e);
+                statusText.textContent = 'Error: ' + e.message;
+                progressBar.style.display = 'none';
+            } finally {
+                convertBtn.disabled = false;
+            }
+        });
+
+
+
+    </script>
+</body>
+</html>

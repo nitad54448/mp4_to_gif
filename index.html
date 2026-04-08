@@ -2,96 +2,266 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MP4 to GIF Converter</title>
+    <title>Pro MP4 to GIF Converter</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        .controls { margin-bottom: 15px; }
-        img { margin-top: 20px; border: 1px solid #ccc; max-width: 100%; }
+        /* Modern Serious Dark Theme */
+        :root { --bg: #13151f; --surface: #1e2130; --primary: #5c7cfa; --text: #cdd6f4; --success: #20c997; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; height: 100vh; box-sizing: border-box; gap: 20px; }
+        
+        /* Two Panel Layout */
+        .panel { flex: 1; background: var(--surface); border-radius: 12px; padding: 25px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); overflow-y: auto; }
+        
+        /* Hide scrollbars but keep functionality */
+        .panel::-webkit-scrollbar { display: none; }
+        .panel { -ms-overflow-style: none; scrollbar-width: none; }
+
+        h2, h3 { margin: 0; color: var(--primary); }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+        
+        label { font-size: 0.9em; font-weight: 600; color: #bac2de; }
+        input { padding: 10px; border-radius: 6px; border: 1px solid #45475a; background: #13151f; color: white; outline: none; transition: 0.2s; }
+        input:focus { border-color: var(--primary); }
+        input[type="file"] { padding: 8px; cursor: pointer; }
+        
+        button { padding: 12px; border-radius: 8px; background: var(--primary); color: #11111b; font-weight: bold; font-size: 1em; cursor: pointer; border: none; transition: 0.2s; margin-top: 10px; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        button:disabled { background: #45475a; color: #a6adc8; cursor: not-allowed; transform: none; }
+        
+        .media-container { width: 100%; aspect-ratio: 16/9; background: #11111b; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #45475a; }
+        video, img { width: 100%; height: 100%; object-fit: contain; }
+        
+        .info-box { background: #13151f; padding: 12px; border-radius: 6px; font-size: 0.85em; color: #a6adc8; border-left: 3px solid var(--primary); }
+        
+        progress { width: 100%; height: 8px; border-radius: 4px; overflow: hidden; appearance: none; margin-bottom: 10px; }
+        progress::-webkit-progress-bar { background-color: #2a2e42; }
+        progress::-webkit-progress-value { background-color: var(--primary); transition: width 0.2s; }
+        
+        #downloadBtn { display: none; width: 100%; background: var(--success); color: #11111b; font-weight: bold; padding: 12px; border-radius: 8px; border: none; cursor: pointer; transition: 0.2s; text-align: center; }
+        #downloadBtn:hover { opacity: 0.9; }
+        #status { margin: 0; font-size: 0.9em; text-align: center; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+
+    <script src="./lib/ffmpeg.js"></script>
+    <script src="./lib/index.js"></script>
 </head>
 <body>
-    <h2>MP4 to GIF Converter</h2>
-    
-    <div class="controls">
-        <input type="file" id="videoFile" accept="video/mp4" />
+
+    <div class="panel">
+        <h2>Media Input</h2>
+        
+        <div class="control-group">
+            <input type="file" id="videoFile" accept="video/mp4, video/quicktime" />
+        </div>
+
+        <div class="media-container">
+            <video id="previewVideo" controls style="display:none;"></video>
+            <span id="noVideoText" style="color: #6c7086;">No video loaded</span>
+        </div>
+
+        <div class="info-box" id="videoInfo">
+            Load a video to see metadata.
+        </div>
+
+        <h3>Settings</h3>
+        
+        <div class="row">
+            <div class="control-group">
+                <label>FPS</label>
+                <input type="number" id="fps" value="10" min="1" max="60" />
+            </div>
+            <div class="control-group">
+                <label>Width (px)</label>
+                <input type="number" id="scale" value="320" step="10" />
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="control-group">
+                <label>Start Time (sec)</label>
+                <input type="number" id="startTime" placeholder="0" min="0" step="0.1" />
+            </div>
+            <div class="control-group">
+                <label>End Time (sec)</label>
+                <input type="number" id="endTime" placeholder="e.g. 5" min="0" step="0.1" />
+            </div>
+        </div>
+
+        <button id="convertBtn" style="display: none;">Generate GIF</button>
     </div>
     
-    <div class="controls">
-        <label>FPS: <input type="number" id="fps" value="10" min="1" max="60" /></label>
-        <label style="margin-left: 10px;">Width (px): <input type="number" id="scale" value="320" step="10" /></label>
+    <div class="panel">
+        <h2>Output</h2>
+        
+        <div class="media-container">
+            <img id="result" style="display:none;" alt="Generated GIF" />
+            <span id="noResultText" style="color: #6c7086;">Result will appear here</span>
+        </div>
+
+        <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
+        <p id="status">Waiting to start...</p>
+        
+        <button id="downloadBtn">💾 Save GIF As...</button>
     </div>
-    
-    <button id="convertBtn">Convert to GIF</button>
-    
-    <p id="status"></p>
-    <img id="result" style="display:none;" alt="Generated GIF" />
 
     <script>
         const { FFmpeg } = FFmpegWASM;
-        const ffmpeg = new FFmpeg();
+        const { toBlobURL } = FFmpegUtil;
 
+        const ffmpeg = new FFmpeg();
+        let loaded = false;
+        let currentGifBlob = null; // Stores the generated GIF
+
+        // UI Elements
+        const fileInput = document.getElementById('videoFile');
+        const previewVideo = document.getElementById('previewVideo');
+        const noVideoText = document.getElementById('noVideoText');
+        const videoInfo = document.getElementById('videoInfo');
+        
         const convertBtn = document.getElementById('convertBtn');
         const statusText = document.getElementById('status');
         const resultImg = document.getElementById('result');
+        const noResultText = document.getElementById('noResultText');
+        const progressBar = document.getElementById('progressBar');
+        const downloadBtn = document.getElementById('downloadBtn');
 
-        // FFmpeg handles background threading automatically
+        // Setup Progress Logging
         ffmpeg.on('progress', ({ progress }) => {
-            statusText.textContent = `Processing: ${Math.round(progress * 100)}%`;
+            const percent = Math.round(progress * 100);
+            const clamped = percent > 100 ? 100 : percent;
+            statusText.textContent = `Processing: ${clamped}%`;
+            progressBar.value = clamped;
         });
 
-        convertBtn.addEventListener('click', async () => {
-            const file = document.getElementById('videoFile').files[0];
-            const fps = document.getElementById('fps').value;
-            const scale = document.getElementById('scale').value;
-
+        // Load Video Preview & Metadata
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            
             if (!file) {
-                statusText.textContent = 'Please select an MP4 file first.';
+                previewVideo.style.display = 'none';
+                noVideoText.style.display = 'block';
+                videoInfo.innerHTML = 'Load a video to see metadata.';
+                convertBtn.style.display = 'none';
                 return;
             }
 
+            const url = URL.createObjectURL(file);
+            previewVideo.src = url;
+            previewVideo.style.display = 'block';
+            noVideoText.style.display = 'none';
+            convertBtn.style.display = 'block';
+
+            previewVideo.onloadedmetadata = () => {
+                const w = previewVideo.videoWidth;
+                const h = previewVideo.videoHeight;
+                const duration = previewVideo.duration.toFixed(2);
+                const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                
+                videoInfo.innerHTML = `
+                    <strong>Resolution:</strong> ${w} x ${h}<br>
+                    <strong>Duration:</strong> ${duration}s<br>
+                    <strong>File Size:</strong> ${sizeMB} MB
+                `;
+            };
+        });
+
+        // Conversion Logic
+        convertBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const fps = document.getElementById('fps').value;
+            const scale = document.getElementById('scale').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+
+            // Reset UI states for new conversion
             convertBtn.disabled = true;
-            statusText.textContent = 'Loading FFmpeg engine...';
+            downloadBtn.style.display = 'none';
             resultImg.style.display = 'none';
+            noResultText.style.display = 'block';
+            progressBar.style.display = 'block';
+            progressBar.value = 0;
+            currentGifBlob = null;
 
             try {
-                const { toBlobURL } = FFmpegUtil;
-
-                // Load WebAssembly core using Blob URLs to bypass CORS
-                if (!ffmpeg.loaded) {
-                    const coreURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
-                    const ffmpegURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd';
-                    
+                if (!loaded) {
+                    statusText.textContent = 'Booting up FFmpeg engine...';
                     await ffmpeg.load({
-                        coreURL: await toBlobURL(`${coreURL}/ffmpeg-core.js`, 'text/javascript'),
-                        wasmURL: await toBlobURL(`${coreURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                        classWorkerURL: await toBlobURL(`${ffmpegURL}/814.ffmpeg.js`, 'text/javascript')
+                        coreURL: await toBlobURL('./lib/ffmpeg-core.js', 'text/javascript'),
+                        wasmURL: await toBlobURL('./lib/ffmpeg-core.wasm', 'application/wasm')
                     });
+                    loaded = true;
                 }
 
-                const inputName = 'input.mp4';
-                const outputName = 'output.gif';
+                statusText.textContent = 'Writing file to memory...';
+                await ffmpeg.writeFile('input.mp4', new Uint8Array(await file.arrayBuffer()));
 
-                // Write file to memory
-                const fileData = new Uint8Array(await file.arrayBuffer());
-                await ffmpeg.writeFile(inputName, fileData);
+                // Build Command Arguments
+                let args = [];
+                if (startTime) args.push('-ss', startTime);
+                if (endTime) args.push('-to', endTime);
+                
+                const vf = `fps=${fps},scale=${scale}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`;
+                args.push('-i', 'input.mp4', '-vf', vf, 'output.gif');
 
-                // Execute conversion
-                const vfString = `fps=${fps},scale=${scale}:-1:flags=lanczos`;
-                await ffmpeg.exec(['-i', inputName, '-vf', vfString, outputName]);
+                statusText.textContent = 'Converting...';
+                await ffmpeg.exec(args);
 
-                // Read and display result
-                const data = await ffmpeg.readFile(outputName);
-                const blob = new Blob([data.buffer], { type: 'image/gif' });
+                statusText.textContent = 'Finalizing GIF...';
+                const data = await ffmpeg.readFile('output.gif');
 
-                statusText.textContent = 'Complete!';
-                resultImg.src = URL.createObjectURL(blob);
+                // Save to blob and update UI
+                currentGifBlob = new Blob([data.buffer], { type: 'image/gif' });
+                const gifUrl = URL.createObjectURL(currentGifBlob);
+                
+                resultImg.src = gifUrl;
                 resultImg.style.display = 'block';
-            } catch (error) {
-                statusText.textContent = `Error: ${error.message}`;
+                noResultText.style.display = 'none';
+                
+                downloadBtn.style.display = 'block';
+                progressBar.style.display = 'none';
+                statusText.textContent = '';
+
+            } catch (e) {
+                console.error(e);
+                statusText.textContent = 'Error: ' + e.message;
+                progressBar.style.display = 'none';
             } finally {
                 convertBtn.disabled = false;
+            }
+        });
+
+        // Native Save As Dialog Logic
+        downloadBtn.addEventListener('click', async () => {
+            if (!currentGifBlob) return;
+
+            try {
+                if (window.showSaveFilePicker) {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: 'output.gif',
+                        types: [{
+                            description: 'GIF Image',
+                            accept: { 'image/gif': ['.gif'] },
+                        }],
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(currentGifBlob);
+                    await writable.close();
+                } else {
+                    const url = URL.createObjectURL(currentGifBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'output.gif';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error('Save failed:', err);
+                    alert('Failed to save file.');
+                }
             }
         });
     </script>
